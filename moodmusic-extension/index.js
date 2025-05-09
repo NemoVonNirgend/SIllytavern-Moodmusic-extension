@@ -134,17 +134,54 @@ async function saveSpotifyCredentials() {
             headers: headers,
             body: JSON.stringify({ clientId, clientSecret }),
         });
-        const data = await response.json();
-        if (!response.ok || !data.success) {
-            throw new Error(data.message || `HTTP error! status: ${response.status}`);
+
+        // Check if the response is OK and if the content type suggests JSON
+        if (!response.ok) {
+            let errorText = `Server error: ${response.status} ${response.statusText}`;
+            // Try to get more detailed error message if server sent one (even if not JSON)
+            try {
+                const responseBodyText = await response.text(); // Get response as text
+                // If it was supposed to be JSON, the server might have sent a JSON error object
+                // or it might have sent HTML/plain text.
+                // We can try parsing it as JSON here if we expect our server to always send JSON errors.
+                // For now, let's just include the raw text if it's short.
+                if (responseBodyText) {
+                    // Attempt to parse as JSON first as per your design for 400 errors
+                    try {
+                        const jsonError = JSON.parse(responseBodyText);
+                        if (jsonError && jsonError.message) {
+                             errorText = jsonError.message;
+                        } else if (responseBodyText.length < 200) { // Avoid huge HTML pages in popup
+                            errorText = responseBodyText;
+                        }
+                    } catch (e_json_parse) {
+                        // Not JSON, just use the text if short
+                        if (responseBodyText.length < 200) {
+                             errorText = responseBodyText;
+                        }
+                    }
+                }
+            } catch (e) {
+                // Failed to get response body text, stick with status
+            }
+            throw new Error(errorText);
         }
+
+        // If response.ok, we expect JSON
+        const data = await response.json(); // This can still fail if server sent 200 OK with non-JSON (bad!)
+
+        if (!data.success) { // Assuming your successful JSON responses always have a 'success' field
+            throw new Error(data.message || 'Operation failed with an unspecified error from server.');
+        }
+
         callPopup("Spotify credentials saved. Any existing login was cleared.", "success");
         console.log(`${LOG_PREFIX_FUNC} Credentials saved.`);
         $('#moodmusic-client-secret').val('');
-        await loadCredentialsStatus(); // This updates areServerCredentialsSet
-        await checkAuthStatus();       // This re-checks login status
+        await loadCredentialsStatus();
+        await checkAuthStatus();
     } catch (error) {
         console.error(`${LOG_PREFIX_FUNC} CATCH block:`, error);
+        // The error.message here will now be more informative if it came from !response.ok block
         callPopup(`Error saving credentials: ${error.message}`, "error");
     }
     console.log(`${LOG_PREFIX_FUNC} END`);
