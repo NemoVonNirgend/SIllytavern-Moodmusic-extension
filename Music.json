@@ -12,14 +12,12 @@
     "wrap_in_quotes": false,
     "names_behavior": -1,
     "send_if_empty": "",
-    "impersonation_prompt": "",
+    "impersonation_prompt": "[Change of plans, now you have to write your reply from the point of view of {{user}}, use chat history to know the context and to adhere to the {{user}}'s tone and writing style.]",
     "new_chat_prompt": "",
-    "new_group_chat_prompt": "",
+    "new_group_chat_prompt": "[Start a new group chat. Group members: {{group}}]",
     "new_example_chat_prompt": "[Example Chat]",
-    "continue_nudge_prompt": "",
+    "continue_nudge_prompt": "[Continue the following message. Do not include ANY parts of the original message. Use capitalization and punctuation as if your reply is a part of the original message: {{lastChatMessage}}]",
     "bias_preset_selected": "Default (none)",
-    "reverse_proxy": "",
-    "proxy_password": "",
     "max_context_unlocked": false,
     "wi_format": "[Details of the fictional world the RP is set in:\n{0}]\n",
     "scenario_format": "[Circumstances and context of the dialogue: {{scenario}}]",
@@ -82,10 +80,10 @@
             "marker": true
         },
         {
-            "identifier": "Genre and Artist Control",
+            "identifier": "enhanceDefinitions",
             "role": "system",
-            "name": "Enhance Definitions",
-            "content": "{{user}} likes songs within the (PROVIDE GENRE HERE) gennre, and they also enjoy (PROVIDE ARTIST/BANDS HERE)",
+            "name": "Genre and Artist Control.",
+            "content": "{{user}} likes songs within the (PROVIDE GENRE HERE) genre, and they also enjoy (PROVIDE ARTIST/BANDS HERE)\n            ",
             "system_prompt": true,
             "marker": false,
             "injection_position": 0,
@@ -153,18 +151,6 @@
             "name": "Prefil",
             "role": "assistant",
             "content": "I will now make my music selection using the provided format and nothing else.",
-            "injection_position": 0,
-            "injection_depth": 4,
-            "forbid_overrides": false
-        },
-        {
-            "identifier": "c0b71243-e1a1-46b6-a30d-47b271a7f816",
-            "system_prompt": false,
-            "enabled": false,
-            "marker": false,
-            "name": "Template ",
-            "role": "system",
-            "content": "",
             "injection_position": 0,
             "injection_depth": 4,
             "forbid_overrides": false
@@ -269,7 +255,7 @@
                 },
                 {
                     "identifier": "enhanceDefinitions",
-                    "enabled": true
+                    "enabled": false
                 },
                 {
                     "identifier": "worldInfoAfter",
@@ -278,10 +264,6 @@
                 {
                     "identifier": "dialogueExamples",
                     "enabled": true
-                },
-                {
-                    "identifier": "c0b71243-e1a1-46b6-a30d-47b271a7f816",
-                    "enabled": false
                 },
                 {
                     "identifier": "chatHistory",
@@ -322,4 +304,25 @@
     "request_images": false,
     "seed": -1,
     "n": 1,
+    "chat_completion_source": "makersuite",
+    "openai_model": "gpt-4-turbo",
+    "claude_model": "claude-3-5-sonnet-20240620",
+    "windowai_model": "",
+    "openrouter_model": "deepseek/deepseek-r1:free",
+    "openrouter_use_fallback": false,
+    "openrouter_group_models": false,
+    "openrouter_sort_models": "alphabetically",
+    "openrouter_providers": [],
+    "openrouter_allow_fallbacks": false,
+    "openrouter_middleout": "on",
+    "ai21_model": "jamba-1.5-large",
+    "mistralai_model": "mistral-large-latest",
+    "cohere_model": "command-r-plus",
+    "perplexity_model": "llama-3-70b-instruct",
+    "groq_model": "llama3-70b-8192",
+    "zerooneai_model": "yi-large",
+    "xai_model": "grok-3-beta",
+    "custom_model": "",
+    "custom_prompt_post_processing": "",
+    "google_model": "gemini-2.0-flash-exp"
 }
