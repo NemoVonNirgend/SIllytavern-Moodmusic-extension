@@ -1,7 +1,6 @@
-// --- START OF FILE index.js ---
-
 import { getContext } from '../../../extensions.js';
-import { callPopup, eventSource, event_types, generateQuietPrompt } from '../../../../script.js';
+// MODIFIED: Added generateRaw
+import { callPopup, eventSource, event_types, generateQuietPrompt, generateRaw } from '../../../../script.js';
 
 const extensionName = "moodmusic-extension";
 const extensionFolderPath = `scripts/extensions/third-party/${extensionName}`;
@@ -415,30 +414,95 @@ async function setPresetViaUi(presetName) {
 // --- AI Interaction ---
 async function getMusicSuggestionFromAI(chatHistorySnippet) {
     const LOG_PREFIX_FUNC = `${LOG_PREFIX} [getMusicSuggestionFromAI]`;
-    console.log(`${LOG_PREFIX_FUNC} Requesting music suggestion using preset "${MUSIC_PRESET_NAME}"...`);
+    console.log(`${LOG_PREFIX_FUNC} Requesting music suggestion...`);
+
+    const apiTypeSelector = $('#main_api');
+    if (!apiTypeSelector.length) {
+        console.error(`${LOG_PREFIX_FUNC} Could not find API type selector (#main_api). Aborting AI suggestion.`);
+        callPopup("MoodMusic: Could not determine API type. AI suggestion skipped.", "error");
+        currentPresetRestorationRequired = false;
+        originalPresetName = null;
+        return null;
+    }
+    const selectedApiType = apiTypeSelector.val();
+    console.log(`${LOG_PREFIX_FUNC} Detected API type from #main_api: '${selectedApiType}'`);
 
     const switched = await setPresetViaUi(MUSIC_PRESET_NAME);
     if (!switched) {
         console.error(`${LOG_PREFIX_FUNC} Failed switch to preset "${MUSIC_PRESET_NAME}". Skipping AI call.`);
-        currentPresetRestorationRequired = false; originalPresetName = null;
+        currentPresetRestorationRequired = false; 
+        originalPresetName = null; 
         return null;
     }
-    currentPresetRestorationRequired = true; // Flag that restoration is needed
+    currentPresetRestorationRequired = true; 
 
+    let aiResponseText = null;
     try {
-        console.warn(`${LOG_PREFIX_FUNC} IMPORTANT: Ensure "${MUSIC_PRESET_NAME}" preset has correct System Prompt for music suggestions.`);
-        console.log(`${LOG_PREFIX_FUNC} Calling generateQuietPrompt...`);
-        const aiResponseText = await generateQuietPrompt(chatHistorySnippet, false, true);
-        console.log(`${LOG_PREFIX_FUNC} generateQuietPrompt returned: "${aiResponseText}"`);
+        console.warn(`${LOG_PREFIX_FUNC} IMPORTANT: Ensure "${MUSIC_PRESET_NAME}" preset has appropriate instructions for music suggestions, compatible with the selected API type and generation function.`);
+
+        const chatCompletionApis = ['openai', 'anthropic']; 
+        const textCompletionApis = ['textgenerationwebui', 'kobold', 'novel', 'koboldhorde'];
+
+        if (chatCompletionApis.includes(selectedApiType)) {
+            console.log(`${LOG_PREFIX_FUNC} Using 'generateQuietPrompt' for chat completion API type: ${selectedApiType}.`);
+            aiResponseText = await generateQuietPrompt(chatHistorySnippet, false, true, { source: 'moodmusic-chat' });
+        } else if (textCompletionApis.includes(selectedApiType)) {
+            console.log(`${LOG_PREFIX_FUNC} Using 'generateRaw' for text completion API type: ${selectedApiType}.`);
+            if (typeof generateRaw !== 'function') {
+                console.error(`${LOG_PREFIX_FUNC} 'generateRaw' function is not available/imported. Cannot proceed with text completion mode. Falling back to generateQuietPrompt.`);
+                callPopup("MoodMusic: 'generateRaw' not available. Attempting fallback for music suggestion.", "warning");
+                aiResponseText = await generateQuietPrompt(chatHistorySnippet, false, true, { source: 'moodmusic-text-fallback' });
+            } else {
+                const genericMusicPromptInstruction = "Based on the following chat, suggest a song (title and artist) that fits the mood. Respond only with 'Title: <song title>' and on a new line 'Artist: <song artist>'.\n\nChat Excerpt:\n";
+                const responseFormatHint = "\n\nTitle:\nArtist:"; 
+                const fullPromptForTextCompletion = `${genericMusicPromptInstruction}${chatHistorySnippet}${responseFormatHint}`;
+
+                console.log(`${LOG_PREFIX_FUNC} Constructing call to generateRaw with assumed early API override parameter.`);
+                // Assumed signature: generateRaw(text, api_override, tokenCount, temp, top_p, ..., miro_eta, gen_settings_preset_name, generate_settings_override, quiet_prompt_params, ...)
+                // Pass null for api_override to use the UI's current API.
+                // Pass 150 for tokenCount.
+                // Pass 10 nulls for: temperature, top_p, top_k, typical_p, tfs, repetition_penalty, repetition_penalty_range, mirostat_mode, mirostat_tau, mirostat_eta
+                // Then MUSIC_PRESET_NAME for gen_settings_preset_name.
+                // Then null for generate_settings_override.
+                // Then quiet_prompt_params.
+                // Other trailing params like stream, controller will use defaults if not provided or if signature is shorter.
+                aiResponseText = await generateRaw(
+                    fullPromptForTextCompletion,    // 1. text
+                    null,                           // 2. api_override (IMPORTANT: try null here to fix "Unknown API: 150")
+                    150,                            // 3. tokenCount (max tokens for the suggestion)
+                    null,                           // 4. temperature
+                    null,                           // 5. top_p
+                    null,                           // 6. top_k
+                    null,                           // 7. typical_p
+                    null,                           // 8. tfs
+                    null,                           // 9. repetition_penalty
+                    null,                           // 10. repetition_penalty_range
+                    null,                           // 11. mirostat_mode
+                    null,                           // 12. mirostat_tau
+                    null,                           // 13. mirostat_eta
+                    MUSIC_PRESET_NAME,              // 14. gen_settings_preset_name (to use generation parameters from this preset)
+                    null,                           // 15. generate_settings_override
+                    { source: 'moodmusic-text' }    // 16. quiet_prompt_params
+                );
+            }
+        } else {
+            console.warn(`${LOG_PREFIX_FUNC} API type '${selectedApiType}' not in explicit chat/text lists. Defaulting to generateQuietPrompt.`);
+            aiResponseText = await generateQuietPrompt(chatHistorySnippet, false, true, { source: 'moodmusic-unknown-api-fallback' });
+        }
+
+        console.log(`${LOG_PREFIX_FUNC} AI call returned: "${aiResponseText}"`);
         if (!aiResponseText || typeof aiResponseText !== 'string' || aiResponseText.trim() === '') {
-            throw new Error("generateQuietPrompt returned empty or invalid response.");
+            throw new Error("AI call returned empty or invalid response.");
         }
         return aiResponseText.trim();
     } catch (error) {
-        console.error(`${LOG_PREFIX_FUNC} Error during generateQuietPrompt:`, error);
+        console.error(`${LOG_PREFIX_FUNC} Error during AI music suggestion:`, error);
+        callPopup(`MoodMusic: AI suggestion failed: ${error.message}`, "error");
         return null;
     }
 }
+
+
 function parseMusicFromAiResponse(aiResponseText) { /* (No changes from before) */
     const LOG_PREFIX_FUNC = `${LOG_PREFIX} [parseMusicFromAiResponse]`; if (!aiResponseText || typeof aiResponseText !== 'string') { console.warn(`${LOG_PREFIX_FUNC} Invalid AI response text.`); return null; } const titleMatch = aiResponseText.match(/Title:\s*(.*)/i); const artistMatch = aiResponseText.match(/Artist:\s*(.*)/i); const title = titleMatch ? titleMatch[1].trim() : null; const artist = artistMatch ? artistMatch[1].trim() : null; if (title) { console.log(`${LOG_PREFIX_FUNC} Parsed - Title: "${title}", Artist: "${artist || 'N/A'}"`); return { title, artist }; } else { console.warn(`${LOG_PREFIX_FUNC} Could not parse Title from: "${aiResponseText}"`); return null; }
 }
@@ -483,6 +547,8 @@ async function triggerMoodAnalysisAndPlay() {
 
     console.log(`${LOG_PREFIX_FUNC} Starting mood analysis and play sequence...`);
     isAnalysisInProgress = true;
+    let localOriginalPresetName = null; 
+    let presetSwitchAttempted = false;
 
     try {
         const context = getContext();
@@ -492,44 +558,51 @@ async function triggerMoodAnalysisAndPlay() {
             const history = context.chat.slice(-HISTORY_FOR_MOOD_ANALYSIS);
             const chatHistorySnippet = history.map(msg => `${msg.is_user ? 'User' : 'Character'}: ${msg.mes}`).join('\n');
 
-            // This is where the original error occurred.
-            // getCurrentPresetNameFromUi internally calls findAndStorePresetDropdown()
-            originalPresetName = getCurrentPresetNameFromUi(); // Line ~444 in previous version
-            if (!originalPresetName) {
-                console.error(`${LOG_PREFIX_FUNC} Could not determine original preset name. Aborting AI step.`); // Line ~445
-                // No need to set currentPresetRestorationRequired to false here, it's not set yet.
+            localOriginalPresetName = getCurrentPresetNameFromUi();
+            if (!localOriginalPresetName) {
+                console.error(`${LOG_PREFIX_FUNC} Could not determine original preset name. AI step will proceed without preset switch if MUSIC_PRESET_NAME is already active, or fail if switch is needed.`);
             } else {
-                console.log(`${LOG_PREFIX_FUNC} Stored original preset: ${originalPresetName}`);
-                const aiResponseText = await getMusicSuggestionFromAI(chatHistorySnippet); // This sets currentPresetRestorationRequired
+                console.log(`${LOG_PREFIX_FUNC} Stored original preset for potential restoration: ${localOriginalPresetName}`);
+            }
+            
+            const aiResponseText = await getMusicSuggestionFromAI(chatHistorySnippet); 
+            presetSwitchAttempted = true; 
 
-                if (currentPresetRestorationRequired && originalPresetName) { // Check if restoration is due
-                    console.log(`${LOG_PREFIX_FUNC} Attempting to restore original preset: ${originalPresetName}`);
-                    await setPresetViaUi(originalPresetName);
-                } else if (currentPresetRestorationRequired && !originalPresetName){
-                     console.warn(`${LOG_PREFIX_FUNC} Restoration flag set, but original name missing. Odd.`);
-                }
-                // currentPresetRestorationRequired = false; // Will be reset in finally
-
-                if (aiResponseText) {
-                    const suggestion = parseMusicFromAiResponse(aiResponseText);
-                    if (suggestion) await requestPlaySong(suggestion);
-                    else console.error(`${LOG_PREFIX_FUNC} Failed to parse suggestion: "${aiResponseText}"`);
-                } else {
-                    console.error(`${LOG_PREFIX_FUNC} Failed to get suggestion from AI.`);
-                }
+            if (aiResponseText) {
+                const suggestion = parseMusicFromAiResponse(aiResponseText);
+                if (suggestion) await requestPlaySong(suggestion);
+                else console.error(`${LOG_PREFIX_FUNC} Failed to parse suggestion: "${aiResponseText}"`);
+            } else {
+                console.error(`${LOG_PREFIX_FUNC} Failed to get suggestion from AI.`);
             }
         }
     } catch (error) {
-        console.error(`${LOG_PREFIX_FUNC} UNEXPECTED ERROR:`, error);
-        if (originalPresetName) { // Check if we even got an original name
-             console.warn(`${LOG_PREFIX_FUNC} Attempting emergency preset restore to "${originalPresetName}".`);
+        console.error(`${LOG_PREFIX_FUNC} UNEXPECTED ERROR in mood analysis sequence:`, error);
+        if (currentPresetRestorationRequired && originalPresetName) {
+             console.warn(`${LOG_PREFIX_FUNC} Attempting emergency preset restore (due to error) to "${originalPresetName}".`);
              await setPresetViaUi(originalPresetName);
+        } else if (presetSwitchAttempted && localOriginalPresetName && originalPresetName !== MUSIC_PRESET_NAME) {
+            console.warn(`${LOG_PREFIX_FUNC} Attempting emergency preset restore (due to error, fallback) to "${localOriginalPresetName}".`);
+            await setPresetViaUi(localOriginalPresetName);
         }
     } finally {
+        if (currentPresetRestorationRequired && originalPresetName) {
+            console.log(`${LOG_PREFIX_FUNC} Restoring original preset: ${originalPresetName}`);
+            const restored = await setPresetViaUi(originalPresetName);
+            if (!restored) {
+                 console.error(`${LOG_PREFIX_FUNC} CRITICAL: FAILED TO RESTORE ORIGINAL PRESET "${originalPresetName}" after AI call.`);
+                 callPopup(`MoodMusic: CRITICAL! Failed to restore preset ${originalPresetName}. Please check manually.`, "error");
+            }
+        } else if (presetSwitchAttempted && !currentPresetRestorationRequired && getCurrentPresetNameFromUi() === MUSIC_PRESET_NAME && originalPresetName && originalPresetName !== MUSIC_PRESET_NAME) {
+            console.warn(`${LOG_PREFIX_FUNC} Attempting fallback preset restoration to "${originalPresetName}" as a precaution.`);
+            await setPresetViaUi(originalPresetName);
+        }
+
+
         isAnalysisInProgress = false;
-        currentPresetRestorationRequired = false;
-        originalPresetName = null; // Ensure this is cleared
-        console.log(`${LOG_PREFIX_FUNC} Process finished. Flags reset.`);
+        currentPresetRestorationRequired = false; 
+        originalPresetName = null; 
+        console.log(`${LOG_PREFIX_FUNC} Mood analysis and play process finished. Flags reset.`);
     }
 }
 
@@ -547,8 +620,14 @@ function toggleExtensionActiveState() {
         console.log(`${LOG_PREFIX_FUNC} Extension Paused.`);
         stopPlaybackPolling();
         if (pollingIntervalId) { clearInterval(pollingIntervalId); pollingIntervalId = null; }
-        if (isAnalysisInProgress) { isAnalysisInProgress = false; }
-        if (currentPresetRestorationRequired) { currentPresetRestorationRequired = false; originalPresetName = null; }
+        if (isAnalysisInProgress) { 
+            if (currentPresetRestorationRequired && originalPresetName) {
+                console.warn(`${LOG_PREFIX_FUNC} Paused during analysis. Attempting to restore preset: ${originalPresetName}`);
+                setPresetViaUi(originalPresetName); 
+            }
+            isAnalysisInProgress = false;
+        }
+        currentPresetRestorationRequired = false; originalPresetName = null;
     }
 }
 
@@ -597,4 +676,3 @@ $(document).ready(() => {
 window.testMoodMusicTrigger = triggerMoodAnalysisAndPlay;
 window.testMoodMusicToggle = toggleExtensionActiveState;
 console.log(`${LOG_PREFIX} Client script loaded. testMoodMusicTrigger(), testMoodMusicToggle() exposed.`);
-// --- END OF FILE index.js ---
