@@ -82,10 +82,10 @@
             "marker": true
         },
         {
-            "identifier": "enhanceDefinitions",
+            "identifier": "Genre and Artist Control",
             "role": "system",
             "name": "Enhance Definitions",
-            "content": "",
+            "content": "{{user}} likes songs within the (PROVIDE GENRE HERE) gennre, and they also enjoy (PROVIDE ARTIST/BANDS HERE)",
             "system_prompt": true,
             "marker": false,
             "injection_position": 0,
