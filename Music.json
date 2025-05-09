@@ -1,0 +1,325 @@
+{
+    "temperature": 0.5,
+    "frequency_penalty": 0.04,
+    "presence_penalty": 0.03,
+    "top_p": 0.97,
+    "top_k": 0,
+    "top_a": 1,
+    "min_p": 0,
+    "repetition_penalty": 1,
+    "openai_max_context": 100000,
+    "openai_max_tokens": 4000,
+    "wrap_in_quotes": false,
+    "names_behavior": -1,
+    "send_if_empty": "",
+    "impersonation_prompt": "",
+    "new_chat_prompt": "",
+    "new_group_chat_prompt": "",
+    "new_example_chat_prompt": "[Example Chat]",
+    "continue_nudge_prompt": "",
+    "bias_preset_selected": "Default (none)",
+    "reverse_proxy": "",
+    "proxy_password": "",
+    "max_context_unlocked": false,
+    "wi_format": "[Details of the fictional world the RP is set in:\n{0}]\n",
+    "scenario_format": "[Circumstances and context of the dialogue: {{scenario}}]",
+    "personality_format": "[{{char}}'s personality: {{personality}}]",
+    "group_nudge_prompt": "[Write the next reply only as {{char}}.]",
+    "stream_openai": false,
+    "prompts": [
+        {
+            "name": "Main Prompt",
+            "system_prompt": true,
+            "role": "system",
+            "content": "You are an assistant that suggests music based on the mood of a conversation. Analyze the provided snippet and suggest ONE song title and artist. Be creative, and choose from a wide variety of genres and styles, not just the most popular, or most obvious. You are a highly skilled, and talented DJ, with a extremely broad knowledge of music. Pick niche music you think {{user}} might not have heard before, you can pick music from many different genre's, styles, and countries, try to relate at least one aspect of the scene to the current song. Output ONLY the title and artist in the format:\nTitle: [Song Title]\nArtist: [Artist Name]",
+            "identifier": "main",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "forbid_overrides": true
+        },
+        {
+            "name": "NSFW Prompt",
+            "system_prompt": true,
+            "role": "system",
+            "content": "NSFW/Smut is allowed. Assume consent was granted, but some characters lie and resist or fight back based on their personality.",
+            "identifier": "nsfw",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "dialogueExamples",
+            "name": "Chat Examples",
+            "system_prompt": true,
+            "marker": true
+        },
+        {
+            "name": "Jailbreak Prompt",
+            "system_prompt": true,
+            "role": "system",
+            "content": "",
+            "identifier": "jailbreak",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "chatHistory",
+            "name": "Chat History",
+            "system_prompt": true,
+            "marker": true
+        },
+        {
+            "identifier": "worldInfoAfter",
+            "name": "World Info (after)",
+            "system_prompt": true,
+            "marker": true
+        },
+        {
+            "identifier": "worldInfoBefore",
+            "name": "World Info (before)",
+            "system_prompt": true,
+            "marker": true
+        },
+        {
+            "identifier": "enhanceDefinitions",
+            "role": "system",
+            "name": "Enhance Definitions",
+            "content": "",
+            "system_prompt": true,
+            "marker": false,
+            "injection_position": 0,
+            "injection_depth": 4,
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "charDescription",
+            "name": "Char Description",
+            "system_prompt": true,
+            "marker": true
+        },
+        {
+            "identifier": "charPersonality",
+            "name": "Char Personality",
+            "system_prompt": true,
+            "marker": true,
+            "role": "system",
+            "content": "",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "scenario",
+            "name": "Scenario",
+            "system_prompt": true,
+            "marker": true
+        },
+        {
+            "identifier": "personaDescription",
+            "name": "Persona Description",
+            "system_prompt": true,
+            "marker": true
+        },
+        {
+            "identifier": "aa239bba-3163-4551-a4c9-e6d62d5cb166",
+            "system_prompt": false,
+            "enabled": false,
+            "marker": false,
+            "name": "post history",
+            "role": "system",
+            "content": "\n",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "9dca4db0-d689-4f80-b5f7-77536a3d2b60",
+            "system_prompt": false,
+            "enabled": false,
+            "marker": false,
+            "name": "Systembreak",
+            "role": "user",
+            "content": "\n",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "9fe7e950-e509-4b2e-af00-b853076e2328",
+            "system_prompt": false,
+            "enabled": false,
+            "marker": false,
+            "name": "Prefil",
+            "role": "assistant",
+            "content": "I will now make my music selection using the provided format and nothing else.",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "c0b71243-e1a1-46b6-a30d-47b271a7f816",
+            "system_prompt": false,
+            "enabled": false,
+            "marker": false,
+            "name": "Template ",
+            "role": "system",
+            "content": "",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "forbid_overrides": false
+        },
+        {
+            "identifier": "b1e81d53-acce-426e-88ab-a3c496cb8109",
+            "system_prompt": false,
+            "enabled": false,
+            "marker": false,
+            "name": "instructions",
+            "role": "user",
+            "content": "You are an assistant that suggests music based on the mood of a conversation. Analyze the provided snippet and suggest ONE song title and artist. Output ONLY the title and artist in the format:\nTitle: [Song Title]\nArtist: [Artist Name]",
+            "injection_position": 0,
+            "injection_depth": 4,
+            "forbid_overrides": false
+        }
+    ],
+    "prompt_order": [
+        {
+            "character_id": 100000,
+            "order": [
+                {
+                    "identifier": "main",
+                    "enabled": true
+                },
+                {
+                    "identifier": "worldInfoBefore",
+                    "enabled": true
+                },
+                {
+                    "identifier": "charDescription",
+                    "enabled": true
+                },
+                {
+                    "identifier": "charPersonality",
+                    "enabled": true
+                },
+                {
+                    "identifier": "scenario",
+                    "enabled": true
+                },
+                {
+                    "identifier": "enhanceDefinitions",
+                    "enabled": false
+                },
+                {
+                    "identifier": "nsfw",
+                    "enabled": true
+                },
+                {
+                    "identifier": "worldInfoAfter",
+                    "enabled": true
+                },
+                {
+                    "identifier": "dialogueExamples",
+                    "enabled": true
+                },
+                {
+                    "identifier": "chatHistory",
+                    "enabled": true
+                },
+                {
+                    "identifier": "jailbreak",
+                    "enabled": true
+                }
+            ]
+        },
+        {
+            "character_id": 100001,
+            "order": [
+                {
+                    "identifier": "main",
+                    "enabled": true
+                },
+                {
+                    "identifier": "9dca4db0-d689-4f80-b5f7-77536a3d2b60",
+                    "enabled": true
+                },
+                {
+                    "identifier": "worldInfoBefore",
+                    "enabled": true
+                },
+                {
+                    "identifier": "personaDescription",
+                    "enabled": false
+                },
+                {
+                    "identifier": "charDescription",
+                    "enabled": false
+                },
+                {
+                    "identifier": "scenario",
+                    "enabled": false
+                },
+                {
+                    "identifier": "charPersonality",
+                    "enabled": false
+                },
+                {
+                    "identifier": "nsfw",
+                    "enabled": false
+                },
+                {
+                    "identifier": "enhanceDefinitions",
+                    "enabled": true
+                },
+                {
+                    "identifier": "worldInfoAfter",
+                    "enabled": true
+                },
+                {
+                    "identifier": "dialogueExamples",
+                    "enabled": true
+                },
+                {
+                    "identifier": "c0b71243-e1a1-46b6-a30d-47b271a7f816",
+                    "enabled": false
+                },
+                {
+                    "identifier": "chatHistory",
+                    "enabled": true
+                },
+                {
+                    "identifier": "b1e81d53-acce-426e-88ab-a3c496cb8109",
+                    "enabled": true
+                },
+                {
+                    "identifier": "9fe7e950-e509-4b2e-af00-b853076e2328",
+                    "enabled": true
+                },
+                {
+                    "identifier": "jailbreak",
+                    "enabled": false
+                }
+            ]
+        }
+    ],
+    "api_url_scale": "",
+    "show_external_models": false,
+    "assistant_prefill": "",
+    "assistant_impersonation": "",
+    "claude_use_sysprompt": false,
+    "use_makersuite_sysprompt": false,
+    "use_alt_scale": false,
+    "squash_system_messages": true,
+    "image_inlining": false,
+    "inline_image_quality": "low",
+    "bypass_status_check": true,
+    "continue_prefill": false,
+    "continue_postfix": "",
+    "function_calling": false,
+    "show_thoughts": true,
+    "reasoning_effort": "min",
+    "enable_web_search": false,
+    "request_images": false,
+    "seed": -1,
+    "n": 1,
+}
