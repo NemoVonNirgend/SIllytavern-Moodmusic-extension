@@ -1,40 +1,50 @@
 <div class="moodmusic-settings">
     <div class="inline-drawer">
         <div class="inline-drawer-toggle inline-drawer-header">
-            <b>Mood Music Settings</b>
+            <b><i class="fa-solid fa-music"></i> Mood Music</b>
             <div class="inline-drawer-icon fa-solid fa-chevron-down down"></div>
         </div>
         <div class="inline-drawer-content">
-            <!-- Spotify Credentials Configuration -->
-            <div class="moodmusic-creds-config">
-                <b>Spotify Credentials:</b> <span id="moodmusic-creds-status">Checking...</span>
-                <div>
-                    <label for="moodmusic-client-id" style="display: block; margin-top: 5px;">Client ID:</label>
-                    <input type="text" id="moodmusic-client-id" class="text_pole" placeholder="Spotify Client ID">
-                </div>
-                <div>
-                    <label for="moodmusic-client-secret" style="display: block; margin-top: 5px;">Client Secret:</label>
-                    <input type="password" id="moodmusic-client-secret" class="text_pole" placeholder="Spotify Client Secret">
-                </div>
-                <button id="moodmusic-save-creds-button" class="menu_button" style="margin-top: 8px; margin-bottom: 10px;">
-                    <i class="fa-solid fa-save"></i> Save Credentials
-                </button>
+            <div class="moodmusic-status-grid">
+                <span>Server credentials</span><strong id="moodmusic-creds-status">Checking…</strong>
+                <span>Spotify</span><strong id="moodmusic-status">Checking…</strong>
+                <span>Now playing</span><strong id="moodmusic-now-playing">—</strong>
             </div>
-            <hr style="margin: 10px 0;">
-            <!-- Authentication and Controls -->
-            <div class="moodmusic-auth-status">
-                <span>Auth Status: </span><span id="moodmusic-status">Checking...</span>
+
+            <div class="moodmusic-actions">
+                <button id="moodmusic-refresh-button" class="menu_button"><i class="fa-solid fa-rotate"></i> Refresh</button>
+                <button id="moodmusic-login-button" class="menu_button"><i class="fa-brands fa-spotify"></i> Connect</button>
+                <button id="moodmusic-logout-button" class="menu_button danger_button"><i class="fa-solid fa-right-from-bracket"></i> Disconnect</button>
+                <button id="moodmusic-suggest-button" class="menu_button"><i class="fa-solid fa-wand-magic-sparkles"></i> Suggest now</button>
             </div>
-            <button id="moodmusic-login-button" class="menu_button" style="margin-right: 5px;">
-                <i class="fa-brands fa-spotify"></i> Login to Spotify
-            </button>
-            <button id="moodmusic-toggle-button" class="menu_button" style="margin-right: 5px;">
-                <i class="fa-solid fa-pause"></i> Pause Music
-            </button>
-            <button id="moodmusic-logout-button" class="menu_button danger_button" style="display: none;">
-                <i class="fa-solid fa-sign-out-alt"></i> Logout (Not Implemented)
-            </button>
-            <p style="margin-top: 5px;"><small>Plays Spotify music based on chat mood. Use the Pause/Resume button to temporarily disable automatic suggestions.</small></p>
-		</div>
-	</div>
+
+            <label class="checkbox_label"><input id="moodmusic-enabled" type="checkbox"> Enable Mood Music</label>
+            <label class="checkbox_label"><input id="moodmusic-auto-suggest" type="checkbox"> Suggest automatically after new replies</label>
+            <label class="checkbox_label"><input id="moodmusic-only-when-idle" type="checkbox"> Do not interrupt music already playing</label>
+
+            <div class="moodmusic-number-grid">
+                <label for="moodmusic-history-messages">Recent messages</label>
+                <input id="moodmusic-history-messages" class="text_pole" type="number" min="2" max="30" step="1">
+                <label for="moodmusic-cooldown-minutes">Cooldown (minutes)</label>
+                <input id="moodmusic-cooldown-minutes" class="text_pole" type="number" min="0" max="120" step="0.5">
+                <label for="moodmusic-poll-seconds">Status polling (seconds)</label>
+                <input id="moodmusic-poll-seconds" class="text_pole" type="number" min="10" max="120" step="1">
+            </div>
+
+            <label for="moodmusic-prompt"><b>Music curator prompt</b></label>
+            <textarea id="moodmusic-prompt" class="text_pole" rows="8"></textarea>
+            <button id="moodmusic-reset-prompt" class="menu_button">Restore default prompt</button>
+
+            <hr>
+            <details>
+                <summary>Spotify app credentials</summary>
+                <p class="moodmusic-help">Prefer the server environment variables <code>MOODMUSIC_SPOTIFY_CLIENT_ID</code> and <code>MOODMUSIC_SPOTIFY_CLIENT_SECRET</code>. Values entered here remain in server memory only and are cleared on restart.</p>
+                <label for="moodmusic-client-id">Client ID</label>
+                <input id="moodmusic-client-id" class="text_pole" type="text" autocomplete="off">
+                <label for="moodmusic-client-secret">Client secret</label>
+                <input id="moodmusic-client-secret" class="text_pole" type="password" autocomplete="new-password">
+                <button id="moodmusic-save-creds-button" class="menu_button"><i class="fa-solid fa-floppy-disk"></i> Use credentials</button>
+            </details>
+        </div>
+    </div>
 </div>

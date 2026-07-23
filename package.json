@@ -1,0 +1,21 @@
+{
+    "name": "sillytavern-moodmusic-server",
+    "version": "3.0.0",
+    "description": "Spotify server plugin for the Mood Music SillyTavern extension",
+    "type": "module",
+    "main": "index.mjs",
+    "engines": {
+        "node": ">=20"
+    },
+    "scripts": {
+        "check": "node --check index.mjs && node --check moodmusic/index.mjs && node --check moodmusic/lib.mjs && node --check moodmusic-extension/index.js && node --check moodmusic-extension/src/core.js",
+        "test": "node --test"
+    },
+    "keywords": [
+        "sillytavern",
+        "spotify",
+        "plugin",
+        "mood-music"
+    ],
+    "license": "AGPL-3.0"
+}

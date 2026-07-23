@@ -1,0 +1,51 @@
+.moodmusic-settings .inline-drawer-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.moodmusic-status-grid,
+.moodmusic-number-grid {
+    display: grid;
+    grid-template-columns: minmax(8rem, 1fr) minmax(7rem, 1fr);
+    gap: 0.4rem 0.75rem;
+    align-items: center;
+}
+
+.moodmusic-status-grid strong {
+    overflow-wrap: anywhere;
+}
+
+.moodmusic-status-ok {
+    color: var(--SmartThemeQuoteColor);
+}
+
+.moodmusic-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.moodmusic-actions .menu_button {
+    flex: 1 1 8rem;
+}
+
+.moodmusic-settings textarea {
+    resize: vertical;
+}
+
+.moodmusic-settings details {
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 0.5rem;
+    padding: 0.6rem;
+}
+
+.moodmusic-settings details[open] {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.moodmusic-help {
+    margin: 0;
+    opacity: 0.8;
+}
