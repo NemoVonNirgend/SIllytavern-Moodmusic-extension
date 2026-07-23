@@ -1,305 +1,419 @@
-// --- START OF FILE SillyTavern/plugins/moodmusic/index.mjs ---
-import { Router } from 'express';
-import axios from 'axios';
-import { jsonParser } from '../../src/express-common.js';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
+import {
+    SpotifyApiError,
+    cleanCredential,
+    escapeHtml,
+    normalizeSpotifyError,
+    validateSuggestion,
+} from './lib.mjs';
 
-// --- Configuration ---
-let SPOTIFY_CLIENT_ID = process.env.MOODMUSIC_SPOTIFY_CLIENT_ID || null;
-let SPOTIFY_CLIENT_SECRET = process.env.MOODMUSIC_SPOTIFY_CLIENT_SECRET || null;
+const VERSION = '3.0.0';
+const AUTHORIZATION_URL = 'https://accounts.spotify.com/authorize';
+const TOKEN_URL = 'https://accounts.spotify.com/api/token';
+const API_URL = 'https://api.spotify.com/v1';
+const SCOPES = 'user-read-playback-state user-modify-playback-state';
+const REQUEST_TIMEOUT_MS = 12_000;
+const AUTH_STATE_TTL_MS = 10 * 60_000;
+const TOKEN_EXPIRY_BUFFER_MS = 60_000;
+const LOG_PREFIX = '[Mood Music Plugin]';
 
-// The redirect URI must exactly match the one in your Spotify Developer Dashboard
-const getRedirectUri = (req) => {
-    const host = req.get('host'); // e.g., 'localhost:8000' or '127.0.0.1:8000'
-    const protocol = req.protocol; // http or https
-    return `${protocol}://${host}/api/plugins/moodmusic/auth/callback`;
-};
-
-
-// --- State (In-memory storage) ---
+let clientId = cleanCredential(process.env.MOODMUSIC_SPOTIFY_CLIENT_ID);
+let clientSecret = cleanCredential(process.env.MOODMUSIC_SPOTIFY_CLIENT_SECRET);
 let accessToken = null;
 let refreshToken = null;
-let tokenExpiryTime = null; // Timestamp (ms) when accessToken expires
+let accessTokenExpiresAt = 0;
+let refreshPromise = null;
+const pendingAuthStates = new Map();
 
-// --- Spotify API URLs & Scopes ---
-const SPOTIFY_AUTH_URL = 'https://accounts.spotify.com/authorize';
-const SPOTIFY_TOKEN_URL = 'https://accounts.spotify.com/api/token';
-const SPOTIFY_API_BASE = 'https://api.spotify.com/v1';
-const SCOPES = 'user-read-playback-state user-modify-playback-state user-read-currently-playing';
-
-const LOG_PREFIX_PLUGIN = '[MoodMusic Plugin]';
-
-// --- Helper Functions ---
-
-function areCredentialsConfigured() {
-    return SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET;
+function credentialsSet() {
+    return Boolean(clientId && clientSecret);
 }
 
-// OPTIMIZED: Helper to send a simple HTML response to the user's popup window
-function sendHtmlResponse(res, title, message, isSuccess = true) {
-    const color = isSuccess ? '#4CAF50' : '#F44336';
-    const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>${title}</title>
-            <style>
-                body { font-family: sans-serif; background-color: #252525; color: #f1f1f1; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-                .container { text-align: center; padding: 2em; border: 1px solid #444; border-radius: 8px; background-color: #333; }
-                h1 { color: ${color}; }
-                button { background-color: #555; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin-top: 1em; }
-                button:hover { background-color: #666; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h1>${isSuccess ? 'Success!' : 'Error'}</h1>
-                <p>${message}</p>
-                <button onclick="window.close()">Close this window</button>
-            </div>
-            <script>
-                // For successful auth, we can also add an alert.
-                if (${isSuccess}) {
-                    alert("Spotify Login Successful! You can now close this tab.");
-                }
-                // Automatically close the window after a few seconds for convenience
-                // setTimeout(() => window.close(), 3000);
-            </script>
-        </body>
-        </html>`;
-    res.send(html);
+function credentialsManagedByEnvironment() {
+    return Boolean(
+        cleanCredential(process.env.MOODMUSIC_SPOTIFY_CLIENT_ID)
+        && cleanCredential(process.env.MOODMUSIC_SPOTIFY_CLIENT_SECRET),
+    );
 }
 
+function getRedirectUri(req) {
+    const configured = cleanCredential(process.env.MOODMUSIC_SPOTIFY_REDIRECT_URI);
+    if (configured) return configured;
+    const origin = new URL(`${req.protocol}://${req.get('host')}`);
+    if (origin.hostname === 'localhost') origin.hostname = '127.0.0.1';
+    return `${origin.origin}/api/plugins/moodmusic/auth/callback`;
+}
+
+function clearTokens() {
+    accessToken = null;
+    refreshToken = null;
+    accessTokenExpiresAt = 0;
+    refreshPromise = null;
+}
+
+function pruneAuthStates() {
+    const now = Date.now();
+    for (const [state, expiresAt] of pendingAuthStates) {
+        if (expiresAt <= now) pendingAuthStates.delete(state);
+    }
+}
+
+function createAuthState() {
+    pruneAuthStates();
+    const state = randomBytes(32).toString('base64url');
+    pendingAuthStates.set(state, Date.now() + AUTH_STATE_TTL_MS);
+    return state;
+}
+
+function consumeAuthState(candidate) {
+    if (typeof candidate !== 'string') return false;
+    pruneAuthStates();
+    const match = [...pendingAuthStates.keys()].find(state => {
+        const left = Buffer.from(state);
+        const right = Buffer.from(candidate);
+        return left.length === right.length && timingSafeEqual(left, right);
+    });
+    if (!match) return false;
+    pendingAuthStates.delete(match);
+    return true;
+}
+
+function sendAuthPage(res, title, message, success) {
+    const safeTitle = escapeHtml(title);
+    const safeMessage = escapeHtml(message);
+    res.status(success ? 200 : 400)
+        .type('html')
+        .set('Cache-Control', 'no-store')
+        .send(`<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>${safeTitle}</title>
+    <style>
+        :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+        body { min-height: 100vh; margin: 0; display: grid; place-items: center; background: #121212; color: #f5f5f5; }
+        main { max-width: 34rem; padding: 2rem; text-align: center; border: 1px solid #444; border-radius: 1rem; background: #242424; }
+        h1 { color: ${success ? '#1ed760' : '#ff6b6b'}; }
+        button { padding: .7rem 1rem; border: 0; border-radius: .5rem; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>${safeTitle}</h1>
+        <p>${safeMessage}</p>
+        <button type="button" onclick="window.close()">Close</button>
+    </main>
+    <script>if (window.opener) window.opener.postMessage({ type: 'moodmusic-auth', success: ${success} }, window.location.origin);</script>
+</body>
+</html>`);
+}
+
+async function fetchWithTimeout(url, options = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+        return await fetch(url, { ...options, signal: controller.signal });
+    } catch (error) {
+        if (error.name === 'AbortError') {
+            throw new SpotifyApiError(504, 'Spotify did not respond in time.');
+        }
+        throw new SpotifyApiError(502, 'Could not reach Spotify.');
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function readResponse(response) {
+    if (response.status === 204) return null;
+    const text = await response.text();
+    if (!text) return null;
+    try {
+        return JSON.parse(text);
+    } catch {
+        return { message: text };
+    }
+}
+
+async function spotifyRequest(path, { method = 'GET', body, token, query } = {}) {
+    const url = new URL(path.startsWith('http') ? path : `${API_URL}${path}`);
+    if (query) {
+        for (const [key, value] of Object.entries(query)) {
+            if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
+        }
+    }
+    const response = await fetchWithTimeout(url, {
+        method,
+        headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const data = await readResponse(response);
+    if (!response.ok) {
+        const normalized = normalizeSpotifyError(response.status, data, response.headers.get('retry-after'));
+        throw new SpotifyApiError(normalized.status, normalized.message, normalized);
+    }
+    return data;
+}
+
+async function exchangeToken(form) {
+    const response = await fetchWithTimeout(TOKEN_URL, {
+        method: 'POST',
+        headers: {
+            Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams(form),
+    });
+    const data = await readResponse(response);
+    if (!response.ok) {
+        const normalized = normalizeSpotifyError(response.status, data, response.headers.get('retry-after'));
+        throw new SpotifyApiError(normalized.status, normalized.message, normalized);
+    }
+    return data;
+}
+
+function storeTokens(data) {
+    if (!data?.access_token) throw new SpotifyApiError(502, 'Spotify did not return an access token.');
+    accessToken = data.access_token;
+    if (data.refresh_token) refreshToken = data.refresh_token;
+    accessTokenExpiresAt = Date.now() + (Number(data.expires_in) || 3600) * 1_000;
+}
 
 async function getValidAccessToken() {
-    const LOG_PREFIX_TOKEN = `${LOG_PREFIX_PLUGIN} [TokenHelper]`;
+    if (!credentialsSet()) throw new SpotifyApiError(400, 'Spotify credentials are not configured.');
+    if (accessToken && Date.now() < accessTokenExpiresAt - TOKEN_EXPIRY_BUFFER_MS) return accessToken;
+    if (!refreshToken) throw new SpotifyApiError(401, 'Spotify login is required.');
 
-    if (!areCredentialsConfigured()) {
-        throw new Error('Spotify Client ID or Secret not configured on the server.');
-    }
-
-    // Return current token if it's still valid (with a 60-second buffer)
-    if (accessToken && tokenExpiryTime && Date.now() < tokenExpiryTime - 60000) {
-        return accessToken;
-    }
-
-    if (!refreshToken) {
-        console.error(`${LOG_PREFIX_TOKEN} No refresh token available. User needs to re-authenticate.`);
-        return null; // Signals to the caller that re-authentication is needed
-    }
-
-    console.log(`${LOG_PREFIX_TOKEN} Access token expired or missing. Attempting refresh...`);
-    try {
-        const authHeader = 'Basic ' + Buffer.from(SPOTIFY_CLIENT_ID + ':' + SPOTIFY_CLIENT_SECRET).toString('base64');
-        const response = await axios.post(SPOTIFY_TOKEN_URL, new URLSearchParams({
+    if (!refreshPromise) {
+        refreshPromise = exchangeToken({
             grant_type: 'refresh_token',
             refresh_token: refreshToken,
-        }), {
-            headers: {
-                'Authorization': authHeader,
-                'Content-Type': 'application/x-www-form-urlencoded',
-            },
+        }).then(data => {
+            storeTokens(data);
+            return accessToken;
+        }).catch(error => {
+            clearTokens();
+            throw error;
+        }).finally(() => {
+            refreshPromise = null;
         });
-
-        accessToken = response.data.access_token;
-        tokenExpiryTime = Date.now() + (response.data.expires_in * 1000);
-        // Spotify may optionally issue a new refresh token
-        if (response.data.refresh_token) {
-            refreshToken = response.data.refresh_token;
-            console.log(`${LOG_PREFIX_TOKEN} Received a NEW refresh token.`);
-        }
-        console.log(`${LOG_PREFIX_TOKEN} Token refreshed successfully.`);
-        return accessToken;
-
-    } catch (error) {
-        console.error(`${LOG_PREFIX_TOKEN} Error refreshing access token:`, error.response ? error.response.data : error.message);
-        // If refresh fails, clear all tokens to force a new login
-        accessToken = null;
-        refreshToken = null;
-        tokenExpiryTime = null;
-        return null;
     }
+    return refreshPromise;
+}
+
+function asyncRoute(handler) {
+    return (req, res, next) => Promise.resolve(handler(req, res, next)).catch(next);
+}
+
+function sendError(error, res) {
+    const status = error instanceof SpotifyApiError ? error.status : 500;
+    if (status >= 500) console.error(`${LOG_PREFIX} Request failed:`, error);
+    const payload = {
+        success: false,
+        message: error instanceof SpotifyApiError ? error.message : 'An internal Mood Music error occurred.',
+        ...(status === 401 ? { needsLogin: true } : {}),
+        ...(status === 400 && !credentialsSet() ? { needsConfiguration: true } : {}),
+        ...(error.details?.retryAfter ? { retryAfter: error.details.retryAfter } : {}),
+    };
+    res.status(status).json(payload);
 }
 
 export async function init(router) {
-    const LOG_PREFIX_INIT = `${LOG_PREFIX_PLUGIN} [Init]`;
-    console.log(`${LOG_PREFIX_INIT} Initializing MoodMusic server plugin...`);
+    router.use((_req, res, next) => {
+        res.set('Cache-Control', 'no-store');
+        next();
+    });
 
-    // === Configuration Endpoint (/config) ===
-    router.post('/config', jsonParser, (req, res) => {
-        const { clientId, clientSecret } = req.body;
-        if (!clientId || typeof clientId !== 'string' || !clientSecret || typeof clientSecret !== 'string') {
-            return res.status(400).json({ success: false, message: 'Client ID and Client Secret are required.' });
-        }
-        SPOTIFY_CLIENT_ID = clientId.trim();
-        SPOTIFY_CLIENT_SECRET = clientSecret.trim();
-        // Invalidate existing tokens, as they are tied to the old credentials
-        accessToken = null;
-        refreshToken = null;
-        tokenExpiryTime = null;
-        console.log(`${LOG_PREFIX_PLUGIN} [/config] Credentials updated. Existing tokens cleared.`);
-        res.json({ success: true, message: 'Spotify credentials updated successfully.' });
+    router.get('/health', (_req, res) => {
+        res.json({ ok: true, id: info.id, version: VERSION });
     });
 
     router.get('/config', (req, res) => {
         res.json({
-            clientIdSet: !!SPOTIFY_CLIENT_ID,
-            clientSecretSet: !!SPOTIFY_CLIENT_SECRET,
+            clientIdSet: Boolean(clientId),
+            clientSecretSet: Boolean(clientSecret),
+            credentialsSet: credentialsSet(),
+            managedByEnvironment: credentialsManagedByEnvironment(),
+            redirectUri: getRedirectUri(req),
         });
     });
 
-    // === Authentication Start (/auth/login) ===
+    router.post('/config', (req, res) => {
+        if (credentialsManagedByEnvironment()) {
+            return res.status(409).json({
+                success: false,
+                message: 'Spotify credentials are managed by server environment variables.',
+            });
+        }
+        const nextClientId = cleanCredential(req.body?.clientId);
+        const nextClientSecret = cleanCredential(req.body?.clientSecret);
+        if (!nextClientId || !nextClientSecret || nextClientId.length > 256 || nextClientSecret.length > 512) {
+            return res.status(400).json({
+                success: false,
+                message: 'A valid Spotify client ID and client secret are required.',
+            });
+        }
+        clientId = nextClientId;
+        clientSecret = nextClientSecret;
+        clearTokens();
+        res.json({ success: true, message: 'Spotify credentials updated. Log in again to continue.' });
+    });
+
     router.get('/auth/login', (req, res) => {
-        if (!areCredentialsConfigured()) {
-            console.error(`${LOG_PREFIX_PLUGIN} [/auth/login] Attempted login before credentials were set.`);
-            return sendHtmlResponse(res, 'Configuration Error', 'Spotify Client ID or Secret not configured on the server.', false);
+        if (!credentialsSet()) {
+            return sendAuthPage(res, 'Setup required', 'Configure Spotify credentials before logging in.', false);
         }
-        const redirectUri = getRedirectUri(req);
-        const authUrl = new URL(SPOTIFY_AUTH_URL);
-        authUrl.search = new URLSearchParams({
+        const url = new URL(AUTHORIZATION_URL);
+        url.search = new URLSearchParams({
             response_type: 'code',
-            client_id: SPOTIFY_CLIENT_ID,
+            client_id: clientId,
             scope: SCOPES,
-            redirect_uri: redirectUri,
+            redirect_uri: getRedirectUri(req),
+            state: createAuthState(),
+            show_dialog: 'true',
         }).toString();
-        console.log(`${LOG_PREFIX_PLUGIN} [/auth/login] Redirecting user to Spotify for authentication.`);
-        res.redirect(authUrl.toString());
+        res.redirect(url.toString());
     });
 
-    // === Authentication Callback (/auth/callback) ===
-    router.get('/auth/callback', async (req, res) => {
-        const { code, error } = req.query;
-        if (error) {
-            console.error(`${LOG_PREFIX_PLUGIN} [/auth/callback] Spotify returned an error: ${error}`);
-            return sendHtmlResponse(res, 'Spotify Login Error', `An error occurred: <strong>${error}</strong>`, false);
+    router.get('/auth/callback', asyncRoute(async (req, res) => {
+        if (req.query.error) {
+            return sendAuthPage(res, 'Spotify login cancelled', String(req.query.error), false);
         }
-        if (!code) {
-            return sendHtmlResponse(res, 'Spotify Login Error', 'No authorization code received from Spotify.', false);
+        if (!consumeAuthState(req.query.state)) {
+            return sendAuthPage(res, 'Spotify login failed', 'The authorization state was missing, expired, or invalid.', false);
         }
-
+        if (typeof req.query.code !== 'string' || !req.query.code) {
+            return sendAuthPage(res, 'Spotify login failed', 'Spotify did not return an authorization code.', false);
+        }
         try {
-            const redirectUri = getRedirectUri(req);
-            const authHeader = 'Basic ' + Buffer.from(SPOTIFY_CLIENT_ID + ':' + SPOTIFY_CLIENT_SECRET).toString('base64');
-            const tokenResponse = await axios.post(SPOTIFY_TOKEN_URL, new URLSearchParams({
+            const tokens = await exchangeToken({
                 grant_type: 'authorization_code',
-                code: code,
-                redirect_uri: redirectUri,
-            }), {
-                headers: { 'Authorization': authHeader, 'Content-Type': 'application/x-www-form-urlencoded' }
+                code: req.query.code,
+                redirect_uri: getRedirectUri(req),
             });
-
-            accessToken = tokenResponse.data.access_token;
-            refreshToken = tokenResponse.data.refresh_token;
-            tokenExpiryTime = Date.now() + (tokenResponse.data.expires_in * 1000);
-            console.log(`${LOG_PREFIX_PLUGIN} [/auth/callback] Authorization successful. Tokens obtained.`);
-            sendHtmlResponse(res, 'Login Successful', 'You can now close this window.');
-
-        } catch (err) {
-            console.error(`${LOG_PREFIX_PLUGIN} [/auth/callback] Error exchanging code for tokens:`, err.response ? err.response.data : err.message);
-            sendHtmlResponse(res, 'Spotify Login Error', 'Failed to exchange authorization code for tokens. Check server logs.', false);
+            storeTokens(tokens);
+            return sendAuthPage(res, 'Spotify connected', 'Mood Music can now control playback.', true);
+        } catch (error) {
+            console.error(`${LOG_PREFIX} OAuth callback failed:`, error);
+            return sendAuthPage(res, 'Spotify login failed', error.message, false);
         }
-    });
+    }));
 
-    // === Authentication Status (/auth/status) ===
-    router.get('/auth/status', (req, res) => {
+    router.get('/auth/status', (_req, res) => {
         res.json({
-            loggedIn: !!refreshToken, // The presence of a refresh token is the true indicator of a persistent login
-            credentialsSet: areCredentialsConfigured(),
+            loggedIn: Boolean(refreshToken),
+            credentialsSet: credentialsSet(),
+            tokenActive: Boolean(accessToken && Date.now() < accessTokenExpiresAt),
         });
     });
 
-    // Middleware to protect subsequent routes
-    const requireAuth = async (req, res, next) => {
-        if (!areCredentialsConfigured()) {
-            return res.status(400).json({ error: 'Spotify credentials not configured.', needsConfiguration: true });
-        }
+    router.post('/auth/logout', (_req, res) => {
+        clearTokens();
+        pendingAuthStates.clear();
+        res.json({ success: true, message: 'Spotify disconnected.' });
+    });
+
+    router.get('/playback/state', asyncRoute(async (_req, res) => {
         const token = await getValidAccessToken();
-        if (!token) {
-            return res.status(401).json({ error: 'Authentication required.', needsLogin: true });
-        }
-        req.accessToken = token; // Attach token for use in next handlers
-        next();
-    };
+        const state = await spotifyRequest('/me/player', { token });
+        if (!state) return res.json({ isPlaying: false, item: null, device: null });
+        res.json({
+            isPlaying: Boolean(state.is_playing),
+            progressMs: state.progress_ms ?? null,
+            item: state.item ? {
+                uri: state.item.uri,
+                name: state.item.name,
+                artists: state.item.artists?.map(artist => artist.name) ?? [],
+                durationMs: state.item.duration_ms,
+            } : null,
+            device: state.device ? {
+                id: state.device.id,
+                name: state.device.name,
+                type: state.device.type,
+                active: Boolean(state.device.is_active),
+            } : null,
+        });
+    }));
 
+    router.get('/devices', asyncRoute(async (_req, res) => {
+        const token = await getValidAccessToken();
+        const data = await spotifyRequest('/me/player/devices', { token });
+        res.json({
+            devices: (data?.devices ?? []).map(device => ({
+                id: device.id,
+                name: device.name,
+                type: device.type,
+                active: Boolean(device.is_active),
+                restricted: Boolean(device.is_restricted),
+            })),
+        });
+    }));
 
-    // === Get Playback State (/playback/state) ===
-    router.get('/playback/state', requireAuth, async (req, res) => {
-        try {
-            const stateResponse = await axios.get(`${SPOTIFY_API_BASE}/me/player`, {
-                headers: { 'Authorization': `Bearer ${req.accessToken}` },
+    router.post('/play', asyncRoute(async (req, res) => {
+        const suggestion = validateSuggestion(req.body?.suggestion);
+        const token = await getValidAccessToken();
+        const query = `track:${suggestion.title} artist:${suggestion.artist}`;
+        let search = await spotifyRequest('/search', {
+            token,
+            query: { q: query, type: 'track', limit: 5 },
+        });
+        let track = search?.tracks?.items?.[0];
+        if (!track) {
+            search = await spotifyRequest('/search', {
+                token,
+                query: { q: `${suggestion.title} ${suggestion.artist}`, type: 'track', limit: 5 },
             });
-            // 204 No Content means no active player
-            if (stateResponse.status === 204 || !stateResponse.data) {
-                return res.json({ is_playing: false, item: null });
-            }
-            res.json(stateResponse.data);
-        } catch (error) {
-            console.error(`${LOG_PREFIX_PLUGIN} [/playback/state] Error fetching playback state:`, error.response ? error.response.data : error.message);
-            res.status(500).json({ error: 'Could not fetch playback state.' });
+            track = search?.tracks?.items?.[0];
         }
-    });
+        if (!track) throw new SpotifyApiError(404, `Spotify could not find “${suggestion.title}” by ${suggestion.artist}.`);
 
-
-    // === Play Endpoint (/play) ===
-    router.post('/play', jsonParser, requireAuth, async (req, res) => {
-        const { suggestion } = req.body;
-        if (!suggestion?.title) {
-            return res.status(400).json({ success: false, message: 'Invalid song suggestion format.' });
+        const devices = await spotifyRequest('/me/player/devices', { token });
+        const available = (devices?.devices ?? []).filter(device => device.id && !device.is_restricted);
+        const requestedDevice = cleanCredential(req.body?.deviceId);
+        const device = available.find(item => item.id === requestedDevice)
+            ?? available.find(item => item.is_active)
+            ?? available[0];
+        if (!device) {
+            throw new SpotifyApiError(404, 'No controllable Spotify device is available. Open Spotify on a device and try again.');
         }
 
-        try {
-            // 1. Search for the track
-            const searchQuery = `track:${suggestion.title.trim()}${suggestion.artist ? ` artist:${suggestion.artist.trim()}` : ''}`;
-            const searchResponse = await axios.get(`${SPOTIFY_API_BASE}/search`, {
-                headers: { 'Authorization': `Bearer ${req.accessToken}` },
-                params: { q: searchQuery, type: 'track', limit: 1 }
-            });
+        await spotifyRequest('/me/player/play', {
+            method: 'PUT',
+            token,
+            query: { device_id: device.id },
+            body: { uris: [track.uri] },
+        });
+        const label = `${track.name} — ${track.artists?.map(artist => artist.name).join(', ') || suggestion.artist}`;
+        res.json({
+            success: true,
+            message: `Playing ${label}`,
+            track: {
+                uri: track.uri,
+                name: track.name,
+                artists: track.artists?.map(artist => artist.name) ?? [],
+                label,
+                externalUrl: track.external_urls?.spotify ?? null,
+            },
+            device: { id: device.id, name: device.name, type: device.type },
+        });
+    }));
 
-            const track = searchResponse.data?.tracks?.items?.[0];
-            if (!track) {
-                return res.status(404).json({ success: false, message: `Song "${suggestion.title}" not found.` });
-            }
-
-            // 2. Find an active device
-            const devicesResponse = await axios.get(`${SPOTIFY_API_BASE}/me/player/devices`, {
-                headers: { 'Authorization': `Bearer ${req.accessToken}` }
-            });
-
-            const activeDevice = devicesResponse.data?.devices?.find(d => d.is_active);
-            const deviceId = activeDevice?.id;
-            if (!deviceId) {
-                console.warn(`${LOG_PREFIX_PLUGIN} [/play] No active Spotify device found. Available devices:`, devicesResponse.data?.devices);
-                return res.status(404).json({ success: false, message: 'No active Spotify device found. Please start playing on a device first.' });
-            }
-
-            // 3. Send the play command
-            await axios.put(`${SPOTIFY_API_BASE}/me/player/play`,
-                { uris: [track.uri] },
-                { headers: { 'Authorization': `Bearer ${req.accessToken}` }, params: { device_id: deviceId } }
-            );
-
-            const trackName = `${track.name} by ${track.artists.map(a => a.name).join(', ')}`;
-            console.log(`${LOG_PREFIX_PLUGIN} [/play] Play command sent for "${trackName}" to device ${activeDevice.name}.`);
-            res.json({ success: true, message: `Playing "${trackName}"`, trackUri: track.uri });
-
-        } catch (error) {
-            console.error(`${LOG_PREFIX_PLUGIN} [/play] Error during playback sequence:`, error.response ? error.response.data : error.message);
-            const spotifyError = error.response?.data?.error;
-            if (spotifyError) {
-                return res.status(error.response.status).json({ success: false, message: `Spotify Error: ${spotifyError.message}` });
-            }
-            res.status(500).json({ success: false, message: 'An internal server error occurred.' });
-        }
-    });
-
-    console.log(`${LOG_PREFIX_INIT} MoodMusic plugin routes initialized successfully.`);
+    router.use((error, _req, res, _next) => sendError(error, res));
+    console.info(`${LOG_PREFIX} v${VERSION} initialized.`);
 }
 
 export async function exit() {
-    console.log(`${LOG_PREFIX_PLUGIN} Exiting server plugin.`);
+    clearTokens();
+    pendingAuthStates.clear();
 }
 
-const moodMusicModule = {
-    init, exit,
-    info: { id: 'moodmusic', name: 'Mood Music', description: 'Plays Spotify music based on chat mood analysis.' },
+export const info = {
+    id: 'moodmusic',
+    name: 'Mood Music',
+    description: 'Secure Spotify playback for the Mood Music SillyTavern extension.',
 };
-export default moodMusicModule;
+
+export default { init, exit, info };

@@ -1,114 +1,97 @@
-# Mood Music Extension for SillyTavern
+# Mood Music server plugin for SillyTavern
 
-This extension allows SillyTavern to play music from Spotify based on the mood and context of your chat. It uses AI to suggest songs and interacts with a backend plugin to control Spotify playback.
+This is the server half of [Mood Music](https://github.com/NemoVonNirgend/SIllytavern-Moodmusic-Ext). It keeps Spotify credentials and OAuth tokens out of browser storage, searches for model-selected tracks, and controls Spotify Connect playback.
 
-## Features
+Version 3 is directly installable as a SillyTavern server plugin and targets SillyTavern 1.18 / Node.js 20.
 
-*   Analyzes chat history to determine the mood.
-*   Uses your configured AI model via a dedicated preset to suggest songs.
-*   Connects to Spotify to search for and play suggested music.
-*   Provides UI controls to save Spotify credentials, log in, and pause/resume music suggestions.
+## Install
 
-## Prerequisites
+From the SillyTavern directory:
 
-1.  **SillyTavern Installed:** You must have a working installation of SillyTavern.
-2.  **Spotify Account:** A Spotify account (Premium is generally recommended for best playback control via API).
-3.  **Spotify Developer App:** You will need to create an app on the Spotify Developer Dashboard.
+```bash
+node plugins.js install https://github.com/NemoVonNirgend/SIllytavern-Moodmusic-extension
+```
 
-## Installation Guide
+Set this in `config.yaml`:
 
-Follow these steps carefully to install and configure the Mood Music extension and plugin.
+```yaml
+enableServerPlugins: true
+```
 
-### Step 1: Install the Backend Plugin
+Restart SillyTavern. The server log should include:
 
-The backend plugin handles communication with the Spotify API.
+```text
+[Mood Music Plugin] v3.0.0 initialized.
+```
 
-1.  **Download Files:** Download the plugin files. You should have a folder named `moodmusic` (containing `index.mjs` and any other server-side files).
-2.  **Copy to Plugins Folder:**
-    *   Navigate to your SillyTavern installation directory.
-    *   Place the entire `moodmusic` folder into the `SillyTavern/plugins/` directory.
-    *   The final path should look like: `SillyTavern/plugins/moodmusic/index.mjs`
+Then install the [frontend extension](https://github.com/NemoVonNirgend/SIllytavern-Moodmusic-Ext) through SillyTavern's extension installer.
 
-### Step 2: Install the Frontend Extension
+## Spotify configuration
 
-The frontend extension provides the UI and client-side logic.
+Create a Spotify Web API application and register the callback used by your SillyTavern origin:
 
-1.  **Download Files:** Download the extension files. You should have a folder named `moodmusic-extension` (containing `index.js`, `style.css`, `settings.html`, and `manifest.json`).
-2.  **Copy to Extensions Folder:**
-    *   Navigate to your SillyTavern installation directory.
-    *   Place the entire `moodmusic-extension` folder into the `SillyTavern/public/scripts/extensions/third-party/` directory.
-    *   The final path should look like: `SillyTavern/public/scripts/extensions/third-party/moodmusic-extension/manifest.json`
+```text
+http://127.0.0.1:8000/api/plugins/moodmusic/auth/callback
+```
 
-### Step 3: Set Up Your Spotify Developer App
+Spotify requires an exact redirect match, requires HTTPS except for explicit loopback IPs, and does not accept `localhost`. The plugin automatically converts a local `localhost` request origin to `127.0.0.1`.
 
-You need to create a Spotify App to get API credentials.
+For stable server configuration, set:
 
-1.  **Go to Spotify Dashboard:** Open your web browser and navigate to [https://developer.spotify.com/dashboard](https://developer.spotify.com/dashboard).
-2.  **Log In:** Log in with your Spotify account.
-3.  **Create an App:**
-    *   Click "Create App" (or "Create a Client ID").
-    *   Fill in the App Name (e.g., "SillyTavern Mood Music") and App Description.
-    *   Agree to the terms.
-4.  **Note Credentials:** Once the app is created, you will see your **Client ID**. Click "Show client secret" to view your **Client Secret**. Copy both of these values securely; you will need them later.
-5.  **Configure Redirect URI:**
-    *   In your app's settings on the Spotify Developer Dashboard, find the "Redirect URIs" section (you might need to click "Edit Settings").
-    *   Add the following Redirect URI: `http://127.0.0.1:8000/api/plugins/moodmusic/auth/callback`
-        *   **Note:** If your SillyTavern instance runs on a port other than `8000`, replace `8000` with your correct port number.
-    *   Click "Save" at the bottom of the Spotify app settings page.
+```text
+MOODMUSIC_SPOTIFY_CLIENT_ID=...
+MOODMUSIC_SPOTIFY_CLIENT_SECRET=...
+MOODMUSIC_SPOTIFY_REDIRECT_URI=https://your.example/api/plugins/moodmusic/auth/callback
+```
 
-### Step 4: Configure the Extension in SillyTavern
+The redirect variable is optional for a direct local `127.0.0.1` setup. Credentials supplied from environment variables cannot be overwritten from the frontend. Credentials supplied through the frontend remain in memory only.
 
-1.  **Restart SillyTavern:** If SillyTavern is running, stop it and restart it to load the new plugin and extension.
-2.  **Open Extension Settings:**
-    *   In SillyTavern, click on the "Extensions" icon (usually a plug icon 🔌) in the top right or left panel.
-    *   Scroll down to find the "Mood Music Settings" section.
-3.  **Enter Spotify Credentials:**
-    *   In the "Client ID" field, paste the Client ID you copied from the Spotify Developer Dashboard.
-    *   In the "Client Secret" field, paste the Client Secret you copied.
-    *   Click the "Save Credentials" button. The "Spotify Credentials" status should change from "Not Set" to "Set".
-4.  **Log In to Spotify:**
-    *   Once credentials are saved and show as "Set", the "Login to Spotify" button should become active.
-    *   Click the "Login to Spotify" button.
-    *   A popup window will appear asking you to authorize your Spotify app. Log in if prompted and click "Agree" or "Authorize".
-    *   After successful authorization, the popup should close, and the "Auth Status" in SillyTavern should change to "Logged In".
+Spotify playback control requires Premium. In Development Mode, the app owner must have Premium and each Spotify account using the app must be on its allowlist.
 
-### Step 5: Set Up the AI Preset
+## API
 
-The extension uses a specific AI preset named "Music" to generate song suggestions.
+All routes are mounted under `/api/plugins/moodmusic`.
 
-1.  **Import Preset:**
-    *   Locate the `Music.json` file.
-    *   In SillyTavern, go to the "Chat Configuration" tab.
-    *   Click on "Import Presets".
-    *   Click "Import" and select the `Music.json` file.
-2.  **Ensure Correct Preset Name:**
-    *   After importing, the preset might be named "Music". The extension specifically looks for a preset named **"Music"**.
-    *   If necessary, rename the imported preset to exactly "Music" in the SillyTavern preset management interface.
-    *   Alternatively, you can create a new preset named "Music" and copy the system prompt content from the provided JSON file into its main system prompt field. The key system prompt content is:
-        ```
-        You are an assistant that suggests music based on the mood of a conversation. Analyze the provided snippet and suggest ONE song title and artist. Be creative, and choose from a wide variety of genres and styles, not just the most popular, or most obvious. You are a highly skilled, and talented DJ, with a extremely broad knowledge of music. Pick niche music you think {{user}} might not have heard before, you can pick music from many different genre's, styles, and countries, try to relate at least one aspect of the scene to the current song. Output ONLY the title and artist in the format:
-        Title: [Song Title]
-        Artist: [Artist Name]
-        ```
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/health` | Plugin ID and version |
+| `GET` | `/config` | Credential presence, source, and effective redirect URI |
+| `POST` | `/config` | Set in-memory app credentials |
+| `GET` | `/auth/login` | Start Spotify Authorization Code flow |
+| `GET` | `/auth/callback` | Complete Spotify authorization |
+| `GET` | `/auth/status` | Read connection state |
+| `POST` | `/auth/logout` | Clear access and refresh tokens |
+| `GET` | `/playback/state` | Read a normalized playback state |
+| `GET` | `/devices` | List controllable Spotify devices |
+| `POST` | `/play` | Search for and play a title/artist suggestion |
 
-## Usage
+Mutating routes use SillyTavern's global JSON and CSRF middleware.
 
-*   Once configured and logged in, the extension will automatically analyze chat messages.
-*   When it deems appropriate (after a period of no music playing or after a song ends), it will:
-    1.  Temporarily switch to the "Music" AI preset.
-    2.  Send a request to the AI for a song suggestion.
-    3.  Switch back to your original AI preset.
-    4.  Attempt to play the suggested song on Spotify.
-*   Use the "Pause Music" / "Resume Music" button in the Mood Music Settings to temporarily disable or re-enable automatic suggestions and playback.
-*   Ensure Spotify is open and active on one of your devices for playback to start. The plugin will try to play on your active device or the first available one.
+## Security and reliability
 
-## Troubleshooting
+- OAuth requests use expiring, single-use cryptographic state values.
+- Callback text is HTML-escaped.
+- Spotify requests have bounded timeouts.
+- Concurrent token refreshes share one request.
+- API responses never return credentials or tokens.
+- Track suggestions and credential lengths are validated.
+- Errors distinguish setup, login, Premium/allowlist, device, and rate-limit failures.
+- Access and refresh tokens are cleared on server shutdown and are never written to disk.
 
-*   **"Credentials not set" / "Login button disabled":** Double-check that you have correctly saved your Client ID and Secret from Spotify in the extension settings.
-*   **"Auth Status: Not Logged In":** Ensure you have clicked the "Login to Spotify" button and successfully authorized the app in the Spotify popup.
-*   **Music not playing:**
-    *   Ensure Spotify is open on a device (desktop, web, mobile).
-    *   Check if there's an active device in your Spotify Connect list.
-    *   Confirm your AI preset named "Music" is correctly configured with the specified system prompt.
-    *   Look for error messages in the SillyTavern console (usually accessible by pressing F12 in your browser and going to the "Console" tab) and the SillyTavern server command-line window.
-*   **After any file changes or initial setup:** Always restart SillyTavern completely.
+## Repository layout
+
+- `index.mjs` — directly loadable package entry point
+- `moodmusic/index.mjs` — plugin routes and Spotify client
+- `moodmusic/lib.mjs` — pure validation and error helpers
+- `moodmusic-extension/` — synchronized frontend distribution copy
+- `Music.json` — legacy 2.x preset retained only for upgrade history; v3 does not use it
+
+## Development
+
+```bash
+npm test
+```
+
+## License
+
+AGPL-3.0.

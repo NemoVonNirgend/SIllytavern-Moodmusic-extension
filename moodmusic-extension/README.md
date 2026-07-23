@@ -1,5 +1,5 @@
-# SIllytavern-Moodmusic-Ext
-Just the extension should work for github insulation and updates.
+# Bundled Mood Music frontend
 
-For full instlation instructions refer to here.
-https://github.com/NemoVonNirgend/SIllytavern-Moodmusic-extension
+This directory mirrors version 3.0.0 of the installable [Mood Music frontend extension](https://github.com/NemoVonNirgend/SIllytavern-Moodmusic-Ext).
+
+Install the standalone frontend repository through SillyTavern's extension installer for automatic updates. These files remain here for manual/offline installation and to keep the combined distribution coherent.

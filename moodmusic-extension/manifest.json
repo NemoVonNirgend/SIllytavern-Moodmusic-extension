@@ -1,11 +1,19 @@
 {
     "display_name": "Mood Music",
-    "loading_order": 999,
+    "loading_order": 50,
     "requires": [],
     "optional": [],
+    "dependencies": [],
     "js": "index.js",
     "css": "style.css",
     "author": "@NemoVonNirgend",
-    "version": "2.2",
-    "homePage": "https://github.com/NemoVonNirgend/SIllytavern-Moodmusic-Ext"
+    "version": "3.0.0",
+    "homePage": "https://github.com/NemoVonNirgend/SIllytavern-Moodmusic-Ext",
+    "auto_update": true,
+    "minimum_client_version": "1.18.0",
+    "hooks": {
+        "activate": "activate",
+        "enable": "onEnable",
+        "disable": "onDisable"
+    }
 }
